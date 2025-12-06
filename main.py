@@ -26,11 +26,6 @@ set_site_information(
     links=["https://github.com/UD-F25-CS1/honors-hackathon-2025-team-gurt/"]
 )
 
-hide_debug_information()
-set_website_title("Your Website Title")
-set_website_framed(False)
-
-
 @dataclass
 class Card:
     suit : str 
