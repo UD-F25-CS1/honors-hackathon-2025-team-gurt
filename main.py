@@ -20,13 +20,6 @@ add_website_css(".caption, small", "color: #e6e6d8; font-size: 0.9em;")
 set_website_framed(False)
 hide_debug_information()
 
-set_site_information(
-    author="akmani@udel.edu, jwtrout@udel.edu",
-    description="""Blackjack against a computer dealer.""",
-    sources=["ChatGPT, Copilot, Gemini"],
-    planning=[""],
-    links=["https://github.com/UD-F25-CS1/honors-hackathon-2025-team-gurt/"]
-)
 
 
 @dataclass
@@ -110,10 +103,9 @@ def shuffle_deck() -> Deck:
 
 @route
 def index(state: State) -> Page:
-    state.money = 1000
     return Page(state, content=[
-        Header("Welcome to Hen House Blackjack!"),
-        "You will start with " +  str(bold("$1,000")),
+        Header("Welcome to Hen House Casino!"),
+        "You have $" +  str(state.money),
         Button("Start Blackjack", place_bet),
         Button("Play Poker", poker_index)
     ])
@@ -164,6 +156,8 @@ def blackjack_start(state: State) -> Page:
             Table([[card.image for card in state.player_cards]]),
             "Your money: " + "$" + str(state.money),
             Button("Place another bet?", place_bet)
+,
+            Button("Play Poker?", index)
         ])
     return Page(state, content=[
         "Dealer Hand: " + hand_value(state.dealer_cards[0:1]),
@@ -189,6 +183,8 @@ def blackjack_hit(state: State) -> Page:
             Table([[card.image for card in state.player_cards]]),
             "Your money: " + "$" + str(state.money),
             Button("Place another bet?", place_bet)
+,
+            Button("Play Poker?", index)
         ])
     if int(hand_value(state.player_cards)) == 21:
         return Page(state, content=[
@@ -247,6 +243,9 @@ def blackjack_stand(state: State) -> Page:
         Table([[card.image for card in state.player_cards]]),
         "Your money: " + "$" + str(state.money),
         Button("Play again?", place_bet)
+,
+        Button("Play Poker?", index)
+
     ])
 
 # ---------------------
@@ -440,8 +439,8 @@ def hand_name(score: tuple) -> str:
 @route
 def poker_index(state: State) -> Page:
     return Page(state, content=[
-        Header("Texas Hold'em (Demo)"),
-        Text("This is a small demo: you vs. dealer. Uses full hand-ranking (pairs, straights, flushes)."),
+        Header("Texas Hold'em"),
+        Text("To start playing you will need to pay $10"),
         HorizontalRule(),
         Button("Play Texas Hold'em", holdem_start),
         Button("Back to Blackjack", index)
@@ -451,6 +450,7 @@ def poker_index(state: State) -> Page:
 @route
 def holdem_start(state: State) -> Page:
     # initialize poker fields on state
+    state.money -= 10
     state.poker_player = []
     state.poker_dealer = []
     state.poker_community = []
@@ -662,6 +662,8 @@ def holdem_showdown(state: State) -> Page:
 
 deck = shuffle_deck()
 start_server()
+
+
 
 
 
