@@ -3,6 +3,8 @@ from drafter import *
 import random
 from drafter.llm import LLMMessage, LLMResponse, call_gemini, set_gemini_server
 
+set_gemini_server("https://drafter-gemini-proxy.akmani.workers.dev/")
+
 set_site_information(
     author="akmani@udel.edu, jwtrout@udel.edu",
     description="""Blackjack against a computer dealer.""",
@@ -14,8 +16,6 @@ set_site_information(
 hide_debug_information()
 set_website_title("Your Website Title")
 set_website_framed(False)
-
-set_gemini_server("https://drafter-gemini-proxy.akmani.workers.dev/")
 
 set_website_style("none")
 set_website_title("Hen House Casino")
