@@ -167,8 +167,7 @@ def blackjack_start(state: State) -> Page:
             "Your Hand: " + hand_value(state.player_cards),
             Table([[card.image for card in state.player_cards]]),
             "Your money: " + "$" + str(state.money),
-            Button("Place another bet?", place_bet)
-,
+            Button("Place another bet?", place_bet),
             Button("Play Poker?", index)
         ])
     return Page(state, content=[
