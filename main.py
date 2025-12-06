@@ -5,18 +5,6 @@ from drafter.llm import LLMMessage, LLMResponse, call_gemini, set_gemini_server
 
 set_gemini_server("https://drafter-gemini-proxy.akmani.workers.dev/")
 
-set_site_information(
-    author="akmani@udel.edu, jwtrout@udel.edu",
-    description="""Blackjack against a computer dealer.""",
-    sources=["ChatGPT, Copilot"],
-    planning=[""],
-    links=["https://github.com/UD-F25-CS1/honors-hackathon-2025-team-gurt/"]
-)
-
-hide_debug_information()
-set_website_title("Your Website Title")
-set_website_framed(False)
-
 set_website_style("none")
 set_website_title("Hen House Casino")
 add_website_css("body", "display:flex; align-items:center; justify-content:center; min-height:100vh; padding:24px; background: radial-gradient(circle at 50% 30%, #052a08 0%, #031b06 40%, #000c03 100%), repeating-linear-gradient(45deg, rgba(0,0,0,0.03) 0px, rgba(0,0,0,0.03) 1px, transparent 1px, transparent 6px); color: #f3f2ec; font-family: 'Segoe UI', Tahoma, sans-serif; font-size:18px;")
@@ -32,6 +20,11 @@ add_website_css(".caption, small", "color: #e6e6d8; font-size: 0.9em;")
 set_website_framed(False)
 hide_debug_information()
 
+set_site_information(author="akmani@udel.edu, jwtrout@udel.edu", 
+                     description="""Blackjack against a computer dealer.""", 
+                     sources=["ChatGPT, Copilot"], planning=[""], 
+                     links=["https://github.com/UD-F25-CS1/honors-hackathon-2025-team-gurt/"] 
+)
 
 
 @dataclass
@@ -47,6 +40,10 @@ class State:
     money : int = 1000
     bet_amount : int = 0
     poker_stage : str = ""
+    gemini_conversation: list[LLMMessage] = field(default_factory=list)
+    gemini_money: int = 1000
+    gemini_is_folded: bool = False
+    watching_gemini: bool = False
     
 @dataclass
 class Deck:
@@ -78,6 +75,77 @@ def hand_value(hand: list[Card]) -> str:
         value -= 10
         aces -= 1
     return str(value)
+
+def cards_to_string(cards: list[Card]) -> str:
+    """Convert a list of Card objects to a human-readable string."""
+    rank_names = {1: "A", 11: "J", 12: "Q", 13: "K"}
+    card_strs = []
+    for card in cards:
+        rank = rank_names.get(card.rank, str(card.rank))
+        card_strs.append(f"{rank}{card.suit}")
+    return ", ".join(card_strs)
+
+def ask_gemini_move(state: State, context: str) -> str:
+    """Ask Gemini what move to make (Fold/Check/Raise) and return the move."""
+    # Build message about current game state
+    message = f"""You are playing Texas Hold'em poker. Here is the current state:
+
+{context}
+
+Your hole cards: {cards_to_string(state.poker_dealer)}
+Community cards: {cards_to_string(state.poker_community)}
+Current pot: ${state.poker_pot}
+Your balance: ${state.gemini_money}
+
+What should you do? Respond with ONLY one of: FOLD, CHECK, or RAISE $X (where X is the amount)."""
+    
+    user_msg = LLMMessage("user", message)
+    state.gemini_conversation.append(user_msg)
+    
+    result = call_gemini(state.gemini_conversation)
+    
+    if isinstance(result, LLMResponse):
+        # Store the full raw assistant response (so we keep Gemini's "thoughts")
+        assistant_msg = LLMMessage("assistant", result.content)
+        state.gemini_conversation.append(assistant_msg)
+
+        # Normalize for decision logic but keep original content in conversation
+        move = result.content.strip().upper()
+        # Validate response format - ensure it's one of the expected moves
+        if "FOLD" in move:
+            return "FOLD"
+        elif "CHECK" in move:
+            return "CHECK"
+        elif "RAISE" in move and "$" in move:
+            # try to preserve the original raise token formatting (return canonical RAISE $X)
+            # extract the dollar amount if possible
+            try:
+                amt = move.split("$")[1].split()[0]
+                return f"RAISE ${int(amt)}"
+            except:
+                return "CHECK"
+        else:
+            # Invalid response, default to CHECK
+            return "CHECK"
+    else:
+        # Default to check on error
+        return "CHECK"
+
+def gemini_fold(state: State) -> None:
+    """Mark Gemini as folded."""
+    state.gemini_is_folded = True
+
+def gemini_check(state: State) -> None:
+    """Gemini checks (no action needed)."""
+    pass
+
+def gemini_raise(state: State, amount: int) -> bool:
+    """Gemini raises by the given amount. Returns True if successful."""
+    if amount > state.gemini_money:
+        return False
+    state.gemini_money -= amount
+    state.poker_pot += amount * 2
+    return True
 
 def shuffle_deck() -> Deck:
     """Create and return a shuffled 52-card Deck.
@@ -116,8 +184,8 @@ def shuffle_deck() -> Deck:
 @route
 def index(state: State) -> Page:
     return Page(state, content=[
-        Header("Welcome to Hen House Casino!"),
-        "You have $" +  str(state.money),
+        Header("Welcome to Hen House Blackjack!"),
+        "You will start with " +  str(state.money),
         Button("Start Blackjack", place_bet),
         Button("Play Poker", poker_index)
     ])
@@ -167,8 +235,7 @@ def blackjack_start(state: State) -> Page:
             "Your Hand: " + hand_value(state.player_cards),
             Table([[card.image for card in state.player_cards]]),
             "Your money: " + "$" + str(state.money),
-            Button("Place another bet?", place_bet),
-            Button("Play Poker?", index)
+            Button("Place another bet?", place_bet)
         ])
     return Page(state, content=[
         "Dealer Hand: " + hand_value(state.dealer_cards[0:1]),
@@ -194,8 +261,6 @@ def blackjack_hit(state: State) -> Page:
             Table([[card.image for card in state.player_cards]]),
             "Your money: " + "$" + str(state.money),
             Button("Place another bet?", place_bet)
-,
-            Button("Play Poker?", index)
         ])
     if int(hand_value(state.player_cards)) == 21:
         return Page(state, content=[
@@ -254,9 +319,6 @@ def blackjack_stand(state: State) -> Page:
         Table([[card.image for card in state.player_cards]]),
         "Your money: " + "$" + str(state.money),
         Button("Play again?", place_bet)
-,
-        Button("Play Poker?", index)
-
     ])
 
 # ---------------------
@@ -451,9 +513,9 @@ def hand_name(score: tuple) -> str:
 def poker_index(state: State) -> Page:
     return Page(state, content=[
         Header("Texas Hold'em"),
-        Text("To start playing you will need to pay $10"),
+        Text("Play against Gemini AI."),
         HorizontalRule(),
-        Button("Play Texas Hold'em", holdem_start),
+        Button("Play vs Gemini", holdem_start),
         Button("Back to Blackjack", index)
     ])
 
@@ -461,13 +523,15 @@ def poker_index(state: State) -> Page:
 @route
 def holdem_start(state: State) -> Page:
     # initialize poker fields on state
-    state.money -= 10
     state.poker_player = []
     state.poker_dealer = []
     state.poker_community = []
     state.poker_stage = "preflop"
     state.poker_pot = 0
     state.poker_current_bet = 0
+    state.gemini_conversation = []
+    state.gemini_is_folded = False
+    state.watching_gemini = False
     # create fresh deck and store in state
     state.poker_deck = shuffle_deck()
 
@@ -479,7 +543,7 @@ def holdem_start(state: State) -> Page:
 
     return Page(state, content=[
         Header("Preflop - Place Your Bet"),
-        "Dealer Cards:",
+        "Gemini Cards:",
         Table([[Image(r"\Cards\cardBack1.png", 100, 150), Image(r"\Cards\cardBack1.png", 100, 150)]]),
         "Community Cards:",
         Table([[card.image for card in state.poker_community]]),
@@ -509,6 +573,18 @@ def holdem_place_bet(state: State, bet_amount: str) -> Page:
         state.money -= bet
         state.poker_pot = bet * 2
         state.poker_current_bet = bet
+        # Ask Gemini to respond to preflop bet
+        context = "This is preflop. Your opponent bet. Decide what to do."
+        move = ask_gemini_move(state, context)
+        if "FOLD" in move:
+            gemini_fold(state)
+        elif "RAISE" in move:
+            try:
+                amount = int(move.split("$")[1])
+                if gemini_raise(state, amount):
+                    state.poker_current_bet = amount
+            except:
+                pass
         return holdem_flop(state)
     except ValueError:
         return Page(state, content=[
@@ -530,21 +606,35 @@ def holdem_flop(state: State) -> Page:
         deal_card(state.poker_deck, state.poker_community)
     state.poker_stage = "flop"
 
+    gemini_moves = [msg.content for msg in state.gemini_conversation if msg.role == "assistant"]
+    last_gemini_move = ""
+    if gemini_moves:
+        last_move = gemini_moves[-1]
+        last_move_upper = last_move.upper()
+        # Show Gemini's full message (thoughts) but check case-insensitively for the intent
+        if "FOLD" in last_move_upper:
+            last_gemini_move = "Gemini: " + last_move
+        elif "RAISE" in last_move_upper:
+            last_gemini_move = "Gemini: " + last_move
+        elif "CHECK" in last_move_upper:
+            last_gemini_move = "Gemini: " + last_move
+    
     return Page(state, content=[
         Header("Flop"),
-        "Dealer Cards:",
+        "Gemini Cards:",
         Table([[Image(r"\Cards\cardBack1.png", 100, 150), Image(r"\Cards\cardBack1.png", 100, 150)]]),
         "Community Cards:",
         Table([[card.image for card in state.poker_community]]),
         "Your Cards:",
         Table([[card.image for card in state.poker_player]]),
         HorizontalRule(),
+        Text(last_gemini_move),
         "Pot: $" + str(state.poker_pot),
         "Your Balance: $" + str(state.money),
         TextBox("bet_amount", str(state.poker_current_bet)),
         Button("Raise", holdem_raise_bet),
         Button("Check", holdem_turn),
-        Button("Fold", poker_index)
+        Button("Fold & Watch Gemini", player_fold_watch_gemini)
     ])
 
 
@@ -581,6 +671,24 @@ def holdem_raise_bet(state: State, bet_amount: str) -> Page:
 
 
 @route
+def player_fold_watch_gemini(state: State) -> Page:
+    """Player folds and watches Gemini AI take over."""
+    state.watching_gemini = True
+    # Reveal Gemini's cards for the show
+    return Page(state, content=[
+        Header("You Folded - Now Watching Gemini"),
+        "Gemini's Cards:",
+        Table([[card.image for card in state.poker_dealer]]),
+        "Community Cards:",
+        Table([[card.image for card in state.poker_community]]),
+        HorizontalRule(),
+        "Pot: $" + str(state.poker_pot),
+        Text("Gemini continues to play..."),
+        Button("Continue", gemini_auto_play)
+    ])
+
+
+@route
 def holdem_turn(state: State) -> Page:
     if getattr(state, 'poker_deck', None) is None:
         state.poker_deck = shuffle_deck()
@@ -589,21 +697,47 @@ def holdem_turn(state: State) -> Page:
     deal_card(state.poker_deck, state.poker_community)
     state.poker_stage = "turn"
 
+    # If player already folded, show Gemini's cards; otherwise hide them
+    if state.watching_gemini:
+        return Page(state, content=[
+            Header("Turn"),
+            "Gemini Cards:",
+            Table([[card.image for card in state.poker_dealer]]),
+            "Community Cards:",
+            Table([[card.image for card in state.poker_community]]),
+            HorizontalRule(),
+            "Pot: $" + str(state.poker_pot),
+            Button("Continue", gemini_auto_play)
+        ])
+    
+    gemini_moves = [msg.content for msg in state.gemini_conversation if msg.role == "assistant"]
+    last_gemini_move = ""
+    if gemini_moves:
+        last_move = gemini_moves[-1]
+        last_move_upper = last_move.upper()
+        if "FOLD" in last_move_upper:
+            last_gemini_move = "Gemini: " + last_move
+        elif "RAISE" in last_move_upper:
+            last_gemini_move = "Gemini: " + last_move
+        elif "CHECK" in last_move_upper:
+            last_gemini_move = "Gemini: " + last_move
+    
     return Page(state, content=[
         Header("Turn"),
-        "Dealer Cards:",
+        "Gemini Cards:",
         Table([[Image(r"\Cards\cardBack1.png", 100, 150), Image(r"\Cards\cardBack1.png", 100, 150)]]),
         "Community Cards:",
         Table([[card.image for card in state.poker_community]]),
         "Your Cards:",
         Table([[card.image for card in state.poker_player]]),
         HorizontalRule(),
+        Text(last_gemini_move),
         "Pot: $" + str(state.poker_pot),
         "Your Balance: $" + str(state.money),
         TextBox("bet_amount", str(state.poker_current_bet)),
         Button("Raise", holdem_raise_bet),
         Button("Check", holdem_river),
-        Button("Fold", poker_index)
+        Button("Fold & Watch Gemini", player_fold_watch_gemini)
     ])
 
 
@@ -616,27 +750,146 @@ def holdem_river(state: State) -> Page:
     deal_card(state.poker_deck, state.poker_community)
     state.poker_stage = "river"
 
+    # If player already folded, show Gemini's cards; otherwise hide them
+    if state.watching_gemini:
+        return Page(state, content=[
+            Header("River"),
+            "Gemini Cards:",
+            Table([[card.image for card in state.poker_dealer]]),
+            "Community Cards:",
+            Table([[card.image for card in state.poker_community]]),
+            HorizontalRule(),
+            "Pot: $" + str(state.poker_pot),
+            Button("Continue", gemini_auto_play)
+        ])
+
+    gemini_moves = [msg.content for msg in state.gemini_conversation if msg.role == "assistant"]
+    last_gemini_move = ""
+    if gemini_moves:
+        last_move = gemini_moves[-1]
+        last_move_upper = last_move.upper()
+        if "FOLD" in last_move_upper:
+            last_gemini_move = "Gemini: " + last_move
+        elif "RAISE" in last_move_upper:
+            last_gemini_move = "Gemini: " + last_move
+        elif "CHECK" in last_move_upper:
+            last_gemini_move = "Gemini: " + last_move
+    
     return Page(state, content=[
         Header("River"),
-        "Dealer Cards:",
-        Table([[Image(r"\Cards\cardBack1.png", 100, 150), Image(r"Cards\cardBack1.png", 100, 150)]]),
+        "Gemini Cards:",
+        Table([[Image(r"\Cards\cardBack1.png", 100, 150), Image(r"\Cards\cardBack1.png", 100, 150)]]),
         "Community Cards:",
         Table([[card.image for card in state.poker_community]]),
         "Your Cards:",
         Table([[card.image for card in state.poker_player]]),
         HorizontalRule(),
+        Text(last_gemini_move),
         "Pot: $" + str(state.poker_pot),
         "Your Balance: $" + str(state.money),
         TextBox("bet_amount", str(state.poker_current_bet)),
         Button("Raise", holdem_raise_bet),
         Button("Check", holdem_showdown),
-        Button("Fold", poker_index)
+        Button("Fold & Watch Gemini", player_fold_watch_gemini)
     ])
 
 
 @route
+def gemini_auto_play(state: State) -> Page:
+    """Gemini automatically plays remaining streets and goes to showdown."""
+    if state.poker_stage == "turn":
+        # Gemini acts on turn
+        context = "The turn card is out. You are last to act. Decide what to do."
+        move = ask_gemini_move(state, context)
+        
+        if "FOLD" in move:
+            gemini_fold(state)
+            gemini_moves = [msg.content for msg in state.gemini_conversation if msg.role == "assistant"]
+            gemini_summary = "Gemini responded: " + " → ".join(gemini_moves) if gemini_moves else ""
+            return Page(state, content=[
+                Header("Gemini Folded on Turn"),
+                Text("You win the pot of $" + str(state.poker_pot) + "!"),
+                Text(gemini_summary),
+                HorizontalRule(),
+                Button("Play again?", holdem_start),
+                Button("Back to Poker Menu", poker_index)
+            ])
+        elif "RAISE" in move:
+            try:
+                amount = int(move.split("$")[1])
+                if gemini_raise(state, amount):
+                    state.poker_current_bet = amount
+            except:
+                pass
+        
+        # Move to river
+        if getattr(state, 'poker_deck', None) is None:
+            state.poker_deck = shuffle_deck()
+        _ = state.poker_deck.cards.pop(0)
+        deal_card(state.poker_deck, state.poker_community)
+        state.poker_stage = "river"
+        return holdem_river(state)
+    elif state.poker_stage == "river":
+        # Gemini acts on river
+        context = "The river card is out. You are last to act. This is the final decision."
+        move = ask_gemini_move(state, context)
+        
+        if "FOLD" in move:
+            gemini_fold(state)
+            gemini_moves = [msg.content for msg in state.gemini_conversation if msg.role == "assistant"]
+            gemini_summary = "Gemini responded: " + " → ".join(gemini_moves) if gemini_moves else ""
+            return Page(state, content=[
+                Header("Gemini Folded on River"),
+                Text("You win the pot of $" + str(state.poker_pot) + "!"),
+                Text(gemini_summary),
+                HorizontalRule(),
+                Button("Play again?", holdem_start),
+                Button("Back to Poker Menu", poker_index)
+            ])
+        elif "RAISE" in move:
+            try:
+                amount = int(move.split("$")[1])
+                if gemini_raise(state, amount):
+                    state.poker_current_bet = amount
+            except:
+                pass
+        
+        # Go to showdown
+        return holdem_showdown(state)
+    else:
+        # Already in showdown
+        return holdem_showdown(state)
+
+
+@route
 def holdem_showdown(state: State) -> Page:
-    # Reveal dealer and compute winner using simplified highest-card rule
+    # Extract Gemini's moves from conversation history
+    gemini_moves = []
+    for msg in state.gemini_conversation:
+        if msg.role == "assistant":
+            gemini_moves.append(msg.content)
+    
+    gemini_action_summary = ""
+    if gemini_moves:
+        gemini_action_summary = "Gemini's decisions: " + " → ".join(gemini_moves[:3])
+    
+    # If player folded during hand, Gemini automatically wins
+    if state.watching_gemini:
+        return Page(state, content=[
+            Header("Hand Complete"),
+            "Gemini Cards:",
+            Table([[card.image for card in state.poker_dealer]]),
+            "Community Cards:",
+            Table([[card.image for card in state.poker_community]]),
+            HorizontalRule(),
+            Text("Gemini wins the pot of $" + str(state.poker_pot) + "!"),
+            Text(gemini_action_summary),
+            "Your money: $" + str(state.money),
+            Button("Play again?", holdem_start),
+            Button("Back to Blackjack", index)
+        ])
+    
+    # Normal showdown: player vs Gemini
     player_combined = state.poker_player + state.poker_community
     dealer_combined = state.poker_dealer + state.poker_community
     p_score = evaluate_hand(player_combined)
@@ -646,14 +899,14 @@ def holdem_showdown(state: State) -> Page:
         result = "You win!"
         state.money += state.poker_pot
     elif p_score < d_score:
-        result = "Dealer wins."
+        result = "Gemini wins."
     else:
         result = "Tie (split pot)."
         state.money += state.poker_pot // 2
 
     return Page(state, content=[
         Header("Showdown"),
-        "Dealer Cards:",
+        "Gemini Cards:",
         Table([[card.image for card in state.poker_dealer]]),
         "Community Cards:",
         Table([[card.image for card in state.poker_community]]),
@@ -662,7 +915,8 @@ def holdem_showdown(state: State) -> Page:
         HorizontalRule(),
         Text("Result: " + result),
         Text("Your Hand: " + hand_name(p_score)),
-        Text("Dealer Hand: " + hand_name(d_score)),
+        Text("Gemini Hand: " + hand_name(d_score)),
+        Text(gemini_action_summary),
         "Your money: $" + str(state.money),
         Button("Play again?", holdem_start),
         Button("Back to Blackjack", index)
@@ -670,10 +924,8 @@ def holdem_showdown(state: State) -> Page:
 
 
 
-
 deck = shuffle_deck()
-start_server()
-
+start_server(State())
 
 
 
