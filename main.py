@@ -18,6 +18,17 @@ add_website_css(".caption, small", "color: #e6e6d8; font-size: 0.9em;")
 set_website_framed(False)
 hide_debug_information()
 
+set_site_information(
+    author="akmani@udel.edu, jwtrout@udel.edu",
+    description="""Blackjack against a computer dealer.""",
+    sources=["ChatGPT, Copilot"],
+    planning=[""],
+    links=["https://github.com/UD-F25-CS1/honors-hackathon-2025-team-gurt/"]
+)
+
+hide_debug_information()
+set_website_title("Your Website Title")
+set_website_framed(False)
 
 
 @dataclass
