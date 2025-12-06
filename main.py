@@ -235,7 +235,8 @@ def blackjack_start(state: State) -> Page:
             "Your Hand: " + hand_value(state.player_cards),
             Table([[card.image for card in state.player_cards]]),
             "Your money: " + "$" + str(state.money),
-            Button("Place another bet?", place_bet)
+            Button("Place another bet?", place_bet),
+            Button("Play Poker?", poker_index)
         ])
     return Page(state, content=[
         "Dealer Hand: " + hand_value(state.dealer_cards[0:1]),
@@ -260,7 +261,8 @@ def blackjack_hit(state: State) -> Page:
             "Your Hand: " + hand_value(state.player_cards),
             Table([[card.image for card in state.player_cards]]),
             "Your money: " + "$" + str(state.money),
-            Button("Place another bet?", place_bet)
+            Button("Place another bet?", place_bet),
+            Button("Play Poker", poker_index)
         ])
     if int(hand_value(state.player_cards)) == 21:
         return Page(state, content=[
@@ -634,7 +636,7 @@ def holdem_flop(state: State) -> Page:
         TextBox("bet_amount", str(state.poker_current_bet)),
         Button("Raise", holdem_raise_bet),
         Button("Check", holdem_turn),
-        Button("Fold & Watch Gemini", player_fold_watch_gemini)
+        Button("Fold", poker_index)
     ])
 
 
