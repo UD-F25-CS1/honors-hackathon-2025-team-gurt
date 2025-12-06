@@ -184,8 +184,8 @@ def shuffle_deck() -> Deck:
 @route
 def index(state: State) -> Page:
     return Page(state, content=[
-        Header("Welcome to Hen House Blackjack!"),
-        "You will start with " +  str(state.money),
+        Header("Welcome to Hen House Casino!"),
+        "You will start with $" +  str(state.money),
         Button("Start Blackjack", place_bet),
         Button("Play Poker", poker_index)
     ])
@@ -320,7 +320,8 @@ def blackjack_stand(state: State) -> Page:
         "Your Hand:" + hand_value(state.player_cards),
         Table([[card.image for card in state.player_cards]]),
         "Your money: " + "$" + str(state.money),
-        Button("Play again?", place_bet)
+        Button("Play again?", place_bet),
+        Button("Play Poker?", poker_index)
     ])
 
 # ---------------------
@@ -513,9 +514,10 @@ def hand_name(score: tuple) -> str:
 
 @route
 def poker_index(state: State) -> Page:
+  state.money -= 10
     return Page(state, content=[
         Header("Texas Hold'em"),
-        Text("Play against Gemini AI."),
+        Text("Play against Gemini AI. Pay $10 to play!"),
         HorizontalRule(),
         Button("Play vs Gemini", holdem_start),
         Button("Back to Blackjack", index)
